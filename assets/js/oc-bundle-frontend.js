@@ -1,6 +1,6 @@
 jQuery(document).ready(function($) {
     // Function to update the total price based on selected options
-    function updateTotalPrice() {
+    function updateTotalPrice() { 
         let totalPrice = 0;
         $('.bundle-product').each(function() {
             const quantity = $(this).find('.bundle-quantity').val();

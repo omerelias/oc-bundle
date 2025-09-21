@@ -150,3 +150,18 @@
 #bundle_quantity{
     max-width: 100px;
 }
+
+/* Style for current product in replacement dialog */
+.current-product {
+    border: 2px solid #0073aa !important;
+    background-color: #f0f8ff !important;
+}
+
+.current-product .switch-item {
+    background-color: #0073aa !important;
+    color: white !important;
+}
+
+.bundle-item-price{
+    margin-top:15px;
+}

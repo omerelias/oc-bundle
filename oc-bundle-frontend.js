@@ -1,6 +1,6 @@
 jQuery(document).ready(function($) {
 
-    function openReplacementProductsDialog(bundleId, productId, level,name='',currently='') {
+    function openReplacementProductsDialog(bundleId, productId, level,name='',currently='', currentProductElement=null) {
         $.ajax({
             url: wc_bundle_products_params.ajaxurl,
             method: 'POST',
@@ -22,13 +22,17 @@ jQuery(document).ready(function($) {
                 '<ul>';
                 response.data.products.forEach(function(product) {
                     console.log(product.id, currently);
-                    if(product.id == currently) return;
+                    // Show all products, including the current one, so user can go back
+                    var isCurrentProduct = (product.id == currently);
+                    var switchText = isCurrentProduct ? 'נוכחי' : 'החלף';
+                    var currentClass = isCurrentProduct ? ' current-product' : '';
+                    
                     dialogHtml += `
-                    <li class="product bundle-item" data-product-id="${product.id}" data-product-price="${product.price}" data-product-url="${product.url}" data-product-image="${product.image}">
+                    <li class="product bundle-item${currentClass}" data-product-id="${product.id}" data-product-price="${product.price}" data-product-url="${product.url}" data-product-image="${product.image}">
                         <div class="bundle-item-thumbnail">
                             <a href="${product.url}">
                                 <img src="${product.image}" alt="${product.name}" />								
-                                <span class="switch-item">החלף</span>
+                                <span class="switch-item">${switchText}</span>
                             </a>
                         </div>
                         <div class="bundle-item-details">
@@ -72,18 +76,24 @@ jQuery(document).ready(function($) {
                     //     name: $(this).text()
                     // }); // Log selected product data
 
-                    var productElement = $('.bundle-level-details[data-level-index="' + level + '"] .bundle-item[data-product-id="' + productId + '"]');
+                    // Use the stored element reference instead of searching by ID
+                    var productElement = currentProductElement;
                     // console.log(productElement);
-                    // Update hidden input values
-                    var hiddenInput = $('input[name="bundle_product_quantity_' + productId + '"]');
+                    // Update hidden input values - find inputs within the current product element
+                    var hiddenInput = productElement.find('input[type="number"]');
                     hiddenInput.attr('name', 'bundle_product_quantity_' + newProductId);
-                    // hiddenInput.attr('data-product-id', newProductId);
 
-                    var hiddenProductIdInput = $('input[name="bundle_product_id[]"][value="' + productId + '"]');
-                    hiddenProductIdInput.val(newProductId);
+                    // Find and update any hidden product ID inputs within this element
+                    var hiddenProductIdInput = productElement.find('input[type="hidden"][name*="bundle_product_id"]');
+                    if (hiddenProductIdInput.length) {
+                        hiddenProductIdInput.val(newProductId);
+                    }
 
-                    var hiddenLevelNameInput = $('input[name="bundle_product_level_name_' + productId + '"]');
-                    hiddenLevelNameInput.attr('name', 'bundle_product_level_name_' + newProductId);
+                    // Find and update level name inputs within this element
+                    var hiddenLevelNameInput = productElement.find('input[name*="bundle_product_level_name"]');
+                    if (hiddenLevelNameInput.length) {
+                        hiddenLevelNameInput.attr('name', 'bundle_product_level_name_' + newProductId);
+                    }
 
                     productElement.attr('data-product-id', newProductId);
                     productElement.attr('data-product-price', newProductPrice);
@@ -189,7 +199,7 @@ jQuery(document).ready(function($) {
             $('.update_price').text((discountedPrice*bundleQuantity).toFixed(2) + ' ' + wc_bundle_products_params.currency_symbol);
         } else {
             $('.bundle-review .price').text(totalPrice.toFixed(2)
-                + ' '
+                + ' ' 
                 + wc_bundle_products_params.currency_symbol
                 + ' '
                 + wc_bundle_product_meta._bundle_text_after_price);
@@ -386,8 +396,11 @@ jQuery(document).ready(function($) {
         let level = $(this).data('level');
         let name = $(this).data('product-name');
         let currently = $(this).parent().parent().parent().data('currently');
+        
+        // Store reference to the current product element for later use
+        let currentProductElement = $(this).closest('.bundle-item');
 
-        openReplacementProductsDialog(bundleId, productId, level, name, currently);
+        openReplacementProductsDialog(bundleId, productId, level, name, currently, currentProductElement);
     });
 
 

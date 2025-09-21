@@ -43,6 +43,7 @@ global $product;
         </div>
     </div>
     <div class="bundle-item-details">
+
         <div class="prod-url" href="<?php echo esc_url(get_permalink($product_new->get_id())); ?>">
 <!--            <span class="prod-name">--><?php //echo esc_html(WC_Bundle_Product_Frontend::get_full_product_name($product_new)); ?><!--</span>-->
             <span class="prod-name"><?php echo esc_html($product_new->get_name()); ?></span>

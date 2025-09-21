@@ -186,7 +186,7 @@ jQuery(document).ready(function($) {
                 ' <span style="">' + wc_bundle_product_meta._bundle_text_after_price
                 + '</span>');
 
-            $('.update_price').text((totalPrice*bundleQuantity).toFixed(2) + ' ' + wc_bundle_products_params.currency_symbol);
+            $('.update_price').text((discountedPrice*bundleQuantity).toFixed(2) + ' ' + wc_bundle_products_params.currency_symbol);
         } else {
             $('.bundle-review .price').text(totalPrice.toFixed(2)
                 + ' '

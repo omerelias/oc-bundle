@@ -17,7 +17,8 @@ class WC_Bundle_Product_Frontend
         add_filter('wc_get_template_part', [__CLASS__, 'custom_cart_template'], 10, 3);
         add_filter('woocommerce_add_to_cart_fragments', [__CLASS__, 'customize_mini_cart']);
         add_action('woocommerce_after_add_to_cart_form', [__CLASS__, 'display_summary_notes']);
-//        add_filter('woocommerce_get_price_html', [__CLASS__, 'add_text_after_price'], 10, 2);
+        // Remove the old hook - we'll handle text after price in the main price function
+        // add_filter('woocommerce_get_price_html', [__CLASS__, 'add_text_after_price'], 10, 2);
         add_action('wp_ajax_get_replacement_products', [__CLASS__, 'get_replacement_products']);
         add_action('wp_ajax_nopriv_get_replacement_products', [__CLASS__, 'get_replacement_products']);
         add_filter('woocommerce_add_cart_item_data', [__CLASS__, 'add_bundle_cart_item_data'], 10, 3);
@@ -30,6 +31,10 @@ class WC_Bundle_Product_Frontend
         remove_action( 'woocommerce_before_quantity_input_field', 			'oc_theme_output_plus_btn' );
         add_action('oc_bundle_text_above_quantity', [__CLASS__, 'display_text_above_quantity']);
         add_filter('body_class', [__CLASS__,'oc_bundle_frontend_body_class']);
+        add_filter('woocommerce_get_price_html', [__CLASS__, 'modify_bundle_price_display'], 10, 2);
+        add_filter('woocommerce_product_get_price', [__CLASS__, 'modify_bundle_price_value'], 10, 2);
+        add_filter('woocommerce_product_get_regular_price', [__CLASS__, 'modify_bundle_price_value'], 10, 2);
+        add_action('woocommerce_after_shop_loop_item_title', [__CLASS__, 'display_bundle_price_in_loop'], 5);
 
 
 //        remove_action('woocommerce_single_product_summary', 'woocommerce_template_single_price', 10);
@@ -286,6 +291,7 @@ class WC_Bundle_Product_Frontend
                                 $quantity = esc_attr(get_post_meta($bundle_id, "bundle_level_{$i}_product_{$product_id_new}_quantity", true));
                                 $min_quantity = esc_attr(get_post_meta($bundle_id, "bundle_level_{$i}_product_{$product_id_new}_quantity_min", true));
                                 $max_quantity = esc_attr(get_post_meta($bundle_id, "bundle_level_{$i}_product_{$product_id_new}_quantity_max", true));
+                                $show_price = get_post_meta($bundle_id, "_bundle_level_{$i}_show_price", true);
                                 $extra_price = get_post_meta($bundle_id, "bundle_level_{$i}_product_{$product_id_new}_extra_price", true);
                                 $show_desc = get_post_meta($bundle_id, "_bundle_show_short_description", true);
                                 $prod_notice = get_post_meta($bundle_id, "bundle_level_{$i}_product_{$product_id_new}_notice", true);
@@ -482,6 +488,205 @@ class WC_Bundle_Product_Frontend
         // Remove colons from the output
         $output = str_replace(':', '', $output);
         return $output;
+    }
+
+    /**
+     * Modify bundle price display in shop/category pages
+     */
+    public static function modify_bundle_price_display($price, $product) {
+        // Debug: Log when this function is called
+        error_log('modify_bundle_price_display called for product ID: ' . $product->get_id() . ', type: ' . $product->get_type());
+        
+        // Only apply to bundle products
+        if ('bundle' !== $product->get_type()) {
+            return $price;
+        }
+
+        // Don't modify price on single product page (it's handled by JavaScript)
+        if (is_product()) {
+            return $price;
+        }
+
+        $bundle_id = $product->get_id();
+        $bundle_price_type = get_post_meta($bundle_id, '_bundle_price_type', true);
+        $bundle_number_of_levels = get_post_meta($bundle_id, '_bundle_number_of_levels', true);
+        $bundle_text_after_price = get_post_meta($bundle_id, '_bundle_text_after_price', true);
+
+        $calculated_price = 0;
+
+        if ($bundle_price_type === 'fixed') {
+            // Use fixed price
+            $calculated_price = floatval(get_post_meta($bundle_id, '_bundle_price', true)) ?: 0;
+        } else {
+            // Calculate price from selected products
+            for ($i = 1; $i <= $bundle_number_of_levels; $i++) {
+                $level_products = get_post_meta($bundle_id, "_bundle_level_{$i}_products", true);
+                if ($level_products) {
+                    $product_ids = explode(',', $level_products);
+                    foreach ($product_ids as $product_id) {
+                        $product_id = (int) $product_id;
+                        if ($product_id) {
+                            $temp_product = wc_get_product($product_id);
+                            if ($temp_product) {
+                                $quantity = intval(get_post_meta($bundle_id, "bundle_level_{$i}_product_{$product_id}_quantity", true)) ?: 1;
+                                $extra_price = floatval(get_post_meta($bundle_id, "bundle_level_{$i}_product_{$product_id}_extra_price", true)) ?: 0;
+                                $calculated_price += ($temp_product->get_price() + $extra_price) * $quantity;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Apply discount if set
+        $discount_type = get_post_meta($bundle_id, '_bundle_discount_type', true) ?: 'fixed';
+        $discount_value = floatval(get_post_meta($bundle_id, '_bundle_discount_value', true)) ?: 0;
+
+        if ($discount_type === 'percent') {
+            $calculated_price = $calculated_price * (1 - $discount_value / 100);
+        } elseif ($discount_type === 'fixed') {
+            $calculated_price = $calculated_price - $discount_value;
+        }
+
+        if ($calculated_price < 0) {
+            $calculated_price = 0;
+        }
+
+        // Format the price
+        $formatted_price = wc_price($calculated_price);
+
+        // Add text after price if set
+        if ($bundle_text_after_price) {
+            $formatted_price .= ' <span class="bundle-price-text">' . esc_html($bundle_text_after_price) . '</span>';
+        }
+
+        return $formatted_price;
+    }
+
+    /**
+     * Modify the actual price value for bundle products
+     */
+    public static function modify_bundle_price_value($price, $product) {
+        // Only apply to bundle products
+        if ('bundle' !== $product->get_type()) {
+            return $price;
+        }
+
+        // Don't modify price on single product page (it's handled by JavaScript)
+        if (is_product()) {
+            return $price;
+        }
+
+        $bundle_id = $product->get_id();
+        $bundle_price_type = get_post_meta($bundle_id, '_bundle_price_type', true);
+        $bundle_number_of_levels = get_post_meta($bundle_id, '_bundle_number_of_levels', true);
+
+        $calculated_price = 0;
+
+        if ($bundle_price_type === 'fixed') {
+            // Use fixed price
+            $calculated_price = floatval(get_post_meta($bundle_id, '_bundle_price', true)) ?: 0;
+        } else {
+            // Calculate price from selected products
+            for ($i = 1; $i <= $bundle_number_of_levels; $i++) {
+                $level_products = get_post_meta($bundle_id, "_bundle_level_{$i}_products", true);
+                if ($level_products) {
+                    $product_ids = explode(',', $level_products);
+                    foreach ($product_ids as $product_id) {
+                        $product_id = (int) $product_id;
+                        if ($product_id) {
+                            $temp_product = wc_get_product($product_id);
+                            if ($temp_product) {
+                                $quantity = intval(get_post_meta($bundle_id, "bundle_level_{$i}_product_{$product_id}_quantity", true)) ?: 1;
+                                $extra_price = floatval(get_post_meta($bundle_id, "bundle_level_{$i}_product_{$product_id}_extra_price", true)) ?: 0;
+                                $calculated_price += ($temp_product->get_price() + $extra_price) * $quantity;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Apply discount if set
+        $discount_type = get_post_meta($bundle_id, '_bundle_discount_type', true) ?: 'fixed';
+        $discount_value = floatval(get_post_meta($bundle_id, '_bundle_discount_value', true)) ?: 0;
+
+        if ($discount_type === 'percent') {
+            $calculated_price = $calculated_price * (1 - $discount_value / 100);
+        } elseif ($discount_type === 'fixed') {
+            $calculated_price = $calculated_price - $discount_value;
+        }
+
+        if ($calculated_price < 0) {
+            $calculated_price = 0;
+        }
+
+        return $calculated_price;
+    }
+
+    /**
+     * Display bundle price in shop loop
+     */
+    public static function display_bundle_price_in_loop() {
+        global $product;
+        
+        if ('bundle' !== $product->get_type()) {
+            return;
+        }
+
+        // Remove default price display
+        remove_action('woocommerce_after_shop_loop_item_title', 'woocommerce_template_loop_price', 10);
+        
+        // Calculate and display our price
+        $bundle_id = $product->get_id();
+        $bundle_price_type = get_post_meta($bundle_id, '_bundle_price_type', true);
+        $bundle_number_of_levels = get_post_meta($bundle_id, '_bundle_number_of_levels', true);
+        $bundle_text_after_price = get_post_meta($bundle_id, '_bundle_text_after_price', true);
+
+        $calculated_price = 0;
+
+        if ($bundle_price_type === 'fixed') {
+            $calculated_price = floatval(get_post_meta($bundle_id, '_bundle_price', true)) ?: 0;
+        } else {
+            for ($i = 1; $i <= $bundle_number_of_levels; $i++) {
+                $level_products = get_post_meta($bundle_id, "_bundle_level_{$i}_products", true);
+                if ($level_products) {
+                    $product_ids = explode(',', $level_products);
+                    foreach ($product_ids as $product_id) {
+                        $product_id = (int) $product_id;
+                        if ($product_id) {
+                            $temp_product = wc_get_product($product_id);
+                            if ($temp_product) {
+                                $quantity = intval(get_post_meta($bundle_id, "bundle_level_{$i}_product_{$product_id}_quantity", true)) ?: 1;
+                                $extra_price = floatval(get_post_meta($bundle_id, "bundle_level_{$i}_product_{$product_id}_extra_price", true)) ?: 0;
+                                $calculated_price += ($temp_product->get_price() + $extra_price) * $quantity;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Apply discount
+        $discount_type = get_post_meta($bundle_id, '_bundle_discount_type', true) ?: 'fixed';
+        $discount_value = floatval(get_post_meta($bundle_id, '_bundle_discount_value', true)) ?: 0;
+
+        if ($discount_type === 'percent') {
+            $calculated_price = $calculated_price * (1 - $discount_value / 100);
+        } elseif ($discount_type === 'fixed') {
+            $calculated_price = $calculated_price - $discount_value;
+        }
+
+        if ($calculated_price < 0) {
+            $calculated_price = 0;
+        }
+
+        // Display the price
+        echo '<span class="price">' . wc_price($calculated_price);
+        if ($bundle_text_after_price) {
+            echo ' <span class="bundle-price-text">' . esc_html($bundle_text_after_price) . '</span>';
+        }
+        echo '</span>';
     }
 
 

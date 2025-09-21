@@ -1,0 +1,12 @@
+.nav-tab-wrapper {
+    margin-bottom: 10px;
+}
+
+.inner-tab-content {
+    display: none;
+}
+
+.nav-tab-active {
+    color: #0073aa;
+    border-bottom: 3px solid #0073aa;
+}
